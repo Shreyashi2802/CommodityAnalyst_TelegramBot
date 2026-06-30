@@ -1,0 +1,12 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# uploaded user files
+data/uploads/*
+!data/uploads/.gitkeep
