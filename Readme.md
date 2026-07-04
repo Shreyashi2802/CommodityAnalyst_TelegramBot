@@ -1,11 +1,35 @@
-# Commodity Analyst Bot
+# CommodityAnalyst Bot 🤖📈
 
-A Telegram bot that answers two kinds of questions about commodities (gold, silver, platinum, copper, nickel, crude oil):
+A production-deployed Telegram bot that delivers live commodity prices and AI-powered market analysis — combining real-time data scraping, document intelligence, and large language model synthesis into a single conversational interface.
 
-1. **Live price questions** ("gold price today") → scrapes real-time prices directly from goldpriceindia.com
-2. **Analysis questions** ("what's the outlook for gold?") → searches the user's uploaded PDF documents + recent commodity news, and uses OpenAI to write a blended answer
+**Live on Telegram:** [@CommodityAnalyst_TelegramBot](https://t.me/CommodityAnalyst_TelegramBot)  
+**Deployed on:** Render | **Vector Store:** Pinecone | **LLM:** OpenAI GPT-4o-mini
 
-A separate script (`daily_price_logger.py`) builds a historical price archive (CSV files) over time, intended for trend analysis.
+---
+
+## What It Does
+
+### Live Price Queries
+Ask for any supported commodity in natural language — the bot fetches the latest India-specific INR price directly from a live source, with no caching or stale data.
+
+Supported: **Gold (24K/22K)**, **Silver**, **Platinum**, **Copper**, **Nickel**, **Crude Oil**
+
+### AI-Powered Document Analysis (RAG Pipeline)
+Users can upload their own PDF research reports. The bot:
+1. Extracts and chunks the document text
+2. Generates semantic embeddings via OpenAI
+3. Stores them in Pinecone, isolated per user
+4. On each query, retrieves the most semantically relevant chunks
+5. Blends document context with live commodity news headlines
+6. Synthesises a single, coherent answer via GPT-4o-mini
+
+### Smart Intent Routing
+Every message passes through an LLM-based classifier before any data is fetched — distinguishing "give me today's price" from "explain the outlook for gold" with high accuracy, even when phrasing is ambiguous.
+
+### Historical Price Logging
+A separate script appends daily prices for all commodities to per-commodity CSV files — building a time-series dataset for trend analysis.
+
+---
 
 ## Architecture
 
@@ -13,71 +37,113 @@ A separate script (`daily_price_logger.py`) builds a historical price archive (C
 Telegram message
        │
        ▼
-intent.py classifies: "live_price" or "analysis"
+  Intent Classifier (GPT-4o-mini)
        │
-       ├── live_price ──▶ price.py ──▶ scrapes goldpriceindia.com
+       ├── live_price ──▶ Scraper ──▶ goldpriceindia.com (INR, real-time)
        │
-       └── analysis ────▶ qa.py ─────▶ documents.py (search user's uploaded PDFs)
-                                  │
-                                  └──▶ investing.com RSS (commodity news)
-                                  │
-                                  └──▶ OpenAI (blends both into one answer)
+       └── analysis ────▶ Retrieval (Pinecone — user-scoped namespace)
+                     │
+                     ├──▶ News context (investing.com RSS feed)
+                     │
+                     └──▶ GPT-4o-mini synthesis
+                               │
+                               ▼
+                         Telegram reply
 ```
 
-- `main.py` — entry point, routes incoming Telegram messages
-- `handlers/price.py` — live price scraping (gold, silver, platinum, copper, nickel, crude oil)
-- `handlers/intent.py` — classifies each message as a live-price question or an analysis question
-- `handlers/documents.py` — PDF text extraction, chunking, and storage in a per-user vector database (ChromaDB)
-- `handlers/qa.py` — blends document search + commodity news into one AI-written answer
-- `daily_price_logger.py` — standalone script, appends today's price to per-commodity CSV files for trend history
-- `cleanup_documents.py` — standalone script to list/delete a user's stored documents from the vector DB
+**Deployment:** Webhook mode (FastAPI + Uvicorn) on Render free tier — the server only activates on incoming messages, no always-on polling required.
 
-## Setup (for a new contributor)
+---
 
-You'll need your **own** API keys — these are not shared between collaborators, each person needs their own.
+## Tech Stack
 
-1. **Get a Telegram bot token**: message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts, copy the token it gives you.
+| Layer | Technology |
+|---|---|
+| Bot interface | Telegram Bot API (`python-telegram-bot`) |
+| Web framework | FastAPI + Uvicorn (webhook mode) |
+| LLM | OpenAI GPT-4o-mini |
+| Embeddings | OpenAI `text-embedding-3-small` (1536-dim) |
+| Vector store | Pinecone (cloud-hosted, persistent, per-user namespaces) |
+| PDF parsing | pypdf |
+| Data scraping | requests + BeautifulSoup |
+| News feed | investing.com RSS (`feedparser`) |
+| Hosting | Render (free tier, webhook-based web service) |
 
-2. **Get an OpenAI API key**: sign up at [platform.openai.com](https://platform.openai.com), create an API key under your account. Note: this requires billing setup, though usage cost for testing is low.
+---
 
-3. **Clone the repo and set up a virtual environment:**
-   ```bash
-   git clone <repo-url>
-   cd CommodityAnalyst_bot
-   python -m venv venv
-   venv\Scripts\activate        # Windows
-   # source venv/bin/activate   # Mac/Linux
-   pip install -r requirements.txt
-   ```
+## Key Engineering Decisions
 
-4. **Create your own `.env` file** in the project root (this file is gitignored — never commit it):
-   ```
-   TELEGRAM_BOT_TOKEN=your_token_here
-   OPENAI_API_KEY=your_key_here
-   ```
+**Why scraping over a paid API?** The primary data source (`goldpriceindia.com`) provides India-specific INR pricing that commodity APIs either don't offer or charge for. We initially integrated API Ninjas but dropped it after discovering free-tier rotation made silver/nickel unreliable — scraping a single trusted source proved more consistent.
 
-5. **Test each piece in isolation** before running the full bot:
-   ```bash
-   python -m handlers.price      # confirms live scraping works
-   python -m handlers.intent     # confirms the classifier works (uses OpenAI)
-   ```
+**Why Pinecone over local ChromaDB?** ChromaDB writes to the local filesystem, which free hosting tiers don't persist across restarts. Pinecone's cloud-hosted index survives redeploys and scales naturally. ChromaDB integration is preserved (commented out) for local development.
 
-6. **Run the bot:**
-   ```bash
-   python main.py
-   ```
-   Open Telegram, find your bot, send `/start`.
+**Why an LLM classifier instead of keyword matching?** A naive `if "gold" in text and "price" in text` check misrouted historical questions ("what was the gold price in 2024?") to the live scraper. An LLM classifier with contrastive examples handles semantic intent correctly regardless of surface phrasing — a meaningful improvement discovered through real failure cases during development.
 
-7. **(Optional) Build price history for trend analysis:**
-   ```bash
-   python daily_price_logger.py
-   ```
-   Run this once a day to accumulate price history. Output lands in `data/price_history/*.csv` — one file per commodity, growing by one row per day. Currently run manually; can later be automated via Task Scheduler (Windows) or cron (Mac/Linux).
+**Why webhook over polling?** Polling requires a continuously-running background process — incompatible with free hosting tiers. Webhook mode turns the bot into a standard HTTP web service, activated only on incoming messages, with no idle resource consumption.
 
-## Known limitations
+---
 
-- Only supports PDF uploads (no Word docs, images, etc.)
-- Live prices cover gold, silver, platinum, copper, nickel, and crude oil only — not yet palladium, aluminium, lead, or zinc, though goldpriceindia.com has pages for these too if extended later
-- Web/news context for the "analysis" path relies on a free RSS feed and a DuckDuckGo fallback scrape — not a paid news API, so coverage can be thin on less-covered topics
-- All scraping depends on goldpriceindia.com's current page structure; if the site changes its layout, the relevant parser in `handlers/price.py` will need updating (see `debug_dump_table_rows()` in that file for a debugging helper)
-- Price history (`daily_price_logger.py`) only starts accumulating from whenever it's first run — no historical backfill
+## Project Structure
+
+```
+CommodityAnalyst_bot/
+├── main.py                    # FastAPI app + Telegram webhook handler
+├── config.py                  # Environment variable loading
+├── daily_price_logger.py      # Standalone script — appends daily prices to CSV
+├── cleanup_documents.py       # Utility — list/delete user documents from Pinecone
+├── render.yaml                # Render deployment config
+├── requirements.txt
+├── handlers/
+│   ├── price.py               # Live price scrapers (3 parser patterns)
+│   ├── intent.py              # LLM-based intent classifier
+│   ├── documents.py           # PDF extraction, chunking, Pinecone storage
+│   └── qa.py                  # RAG retrieval + OpenAI synthesis
+└── data/
+    ├── uploads/<user_id>/     # Raw uploaded PDFs (per user)
+    └── price_history/         # Daily price CSVs (gold.csv, silver.csv, ...)
+```
+
+---
+
+## Setup (New Contributor)
+
+You need your own API keys — these are not shared.
+
+**Prerequisites:**
+- Python 3.10+
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- An OpenAI API key from [platform.openai.com](https://platform.openai.com)
+- A free Pinecone index from [pinecone.io](https://pinecone.io) (dimensions: 1536, metric: cosine)
+
+```bash
+git clone <repo-url>
+cd CommodityAnalyst_bot
+python -m venv venv
+venv\Scripts\activate        # Windows — or: source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `.env` in project root:
+```
+TELEGRAM_BOT_TOKEN=your_token
+OPENAI_API_KEY=your_key
+PINECONE_API_KEY=your_key
+PINECONE_INDEX_NAME=your_index_name
+WEBHOOK_URL=                  # leave blank for local dev (uses polling fallback)
+```
+
+Test each layer in isolation:
+```bash
+python -m handlers.price      # verify live scraping works
+python -m handlers.intent     # verify intent classifier works
+python main.py                # run the bot locally
+```
+
+---
+
+## Known Limitations & Planned Improvements
+
+- **Cold starts:** Free Render tier sleeps after 15 min inactivity — first message after idle takes ~30s. Solvable with a paid tier or a keep-alive ping.
+- **Scraping fragility:** If `goldpriceindia.com` changes its page layout, parsers in `price.py` need updating. A `debug_dump_table_rows()` helper is included for fast diagnosis.
+- **PDF only:** Document uploads support PDF only. Word/image support would require additional extraction libraries.
+- **No financial advice:** Analysis answers are summaries of retrieved context, not investment recommendations.
