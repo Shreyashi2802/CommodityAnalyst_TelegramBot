@@ -1,18 +1,10 @@
 """
 Classifies what kind of question the user is asking, so main.py can
-route to the right handler.
+route to the right handler. Three categories:
 
-WHY NOT JUST KEYWORDS:
-  A simple "if 'gold' in text and 'price' in text" check has two
-  failure modes:
-    1. Misses naturally-phrased price questions that don't literally
-       say "price" (e.g. "how much is gold worth today").
-    2. Wrongly grabs historical/analytical questions that happen to
-       contain both words (e.g. "what was the gold price in 2024"
-       — this needs the user's DOCUMENT, not today's live price).
-
-  A small LLM call handles this far more reliably than string
-  matching, at the cost of one extra cheap API call per message.
+  live_price       -> scrape goldpriceindia.com for today's price
+  historical_price -> look up a past date from our local CSV logs
+  analysis         -> RAG pipeline (doc search + news + OpenAI)
 """
 from openai import OpenAI
 from config import OPENAI_API_KEY
@@ -20,43 +12,45 @@ from config import OPENAI_API_KEY
 client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 CLASSIFIER_SYSTEM_PROMPT = """\
-You classify a user's message into exactly one category:
+You classify a user's message into exactly one of three categories:
 
-- "live_price": the user wants TODAY's current/live price of ANY \
-commodity (gold, silver, oil, copper, etc.) — right now, in real time. \
-This is ONLY for questions about the present moment.
+- "live_price": the user wants TODAY's current/live price of any
+  commodity — right now, in real time. Only for the present moment.
 
-- "analysis": ANY question about a past date, a past year, a trend, an \
-outlook, demand, comparisons, or a specific document — even if a \
-commodity name and the word "price" appear together. The presence of \
-those words does NOT make it a live_price question. What matters is \
-WHEN: past/trend/analysis = analysis. Right-now/current moment = live_price.
+- "historical_price": the user wants the price of a commodity on a
+  SPECIFIC PAST DATE or relative past period — yesterday, last week,
+  last Monday, 3 days ago, a specific date like "June 28", etc.
+  The key signal is: they want ONE specific past price point, not
+  a trend/analysis/outlook.
+
+- "analysis": anything else — trends, outlooks, comparisons, "why",
+  "how has it changed", document questions, multi-period analysis.
+  Also use this for vague past references that aren't a specific
+  single date (e.g. "how was gold last year" = analysis, not historical).
 
 Examples:
-"gold price today" -> live_price
-"what's the current silver price" -> live_price
-"how much is crude oil worth right now" -> live_price
-"copper price" -> live_price
-"what was the gold price in 2024" -> analysis   (past year, not "right now")
-"how has oil price changed this year" -> analysis  (trend)
-"what's the outlook for silver" -> analysis
-"why is copper expensive" -> analysis
+"gold price today"               -> live_price
+"current silver rate"            -> live_price
+"crude oil price right now"      -> live_price
+"gold price yesterday"           -> historical_price
+"what was silver price last week"-> historical_price
+"copper price on June 28"        -> historical_price
+"nickel price 3 days ago"        -> historical_price
+"gold price last Monday"         -> historical_price
+"how has gold changed this year" -> analysis
+"what's the outlook for silver"  -> analysis
+"why is copper expensive"        -> analysis
+"what was gold price in 2024"    -> analysis  (full year, not a specific date)
 
-If the message refers to any specific past date, past year, or time period \
-that is not literally "now" or "today", it is ALWAYS "analysis" — never \
-live_price, regardless of how the sentence is worded.
-
-Respond with ONLY one word: live_price or analysis. No punctuation, \
-no explanation.
+Respond with ONLY one word: live_price, historical_price, or analysis.
+No punctuation, no explanation.
 """
 
 
 def classify_intent(user_text: str) -> str:
     """
-    Returns "live_price" or "analysis".
-    Defaults to "analysis" if anything goes wrong, since that path
-    degrades more gracefully (it can still try to answer, or say it
-    found no relevant info — rather than wrongly firing the scraper).
+    Returns "live_price", "historical_price", or "analysis".
+    Defaults to "analysis" on any error.
     """
     try:
         response = client_openai.chat.completions.create(
@@ -71,22 +65,24 @@ def classify_intent(user_text: str) -> str:
         label = response.choices[0].message.content.strip().lower()
         if "live_price" in label:
             return "live_price"
+        if "historical_price" in label:
+            return "historical_price"
         return "analysis"
     except Exception:
         return "analysis"
 
 
 if __name__ == "__main__":
-    # Quick manual test: run `python handlers/intent.py` directly
     test_messages = [
         "gold price today",
         "what's the current gold price",
-        "how much is gold worth right now",
-        "what was the gold price in 2024",
-        "what was the gold price last week",
-        "how has gold price changed this year",
-        "what's the outlook for gold",
-        "why is gold expensive",
+        "gold price yesterday",
+        "what was silver price last week",
+        "copper price on June 28",
+        "nickel price 3 days ago",
+        "what was gold price in 2024",
+        "how has gold changed this year",
+        "what's the outlook for silver",
     ]
     for msg in test_messages:
-        print(f"{msg!r:50} -> {classify_intent(msg)}")
+        print(f"{msg!r:55} -> {classify_intent(msg)}")

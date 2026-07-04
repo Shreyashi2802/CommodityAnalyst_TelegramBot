@@ -40,6 +40,7 @@ from handlers.price import (
 from handlers.documents import store_document
 from handlers.qa import answer_with_context
 from handlers.intent import classify_intent
+from handlers.history import lookup_historical_price
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -106,6 +107,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_text = update.message.text
 
     intent = classify_intent(user_text)
+
+    if intent == "historical_price":
+        await update.message.reply_text("Looking up that price from my records...")
+        reply = lookup_historical_price(user_text)
+        await update.message.reply_text(reply)
+        return
 
     if intent == "live_price":
         unsupported = mentions_unsupported_commodity(user_text)
