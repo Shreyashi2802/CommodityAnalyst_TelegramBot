@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: commodity-analyst-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false        # you'll paste this manually in Render dashboard
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false        # paste your Render URL here after first deploy

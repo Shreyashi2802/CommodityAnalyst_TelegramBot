@@ -1,15 +1,26 @@
 """
-Entry point for the bot. Routes incoming messages to the right handler:
+Entry point for the bot.
+
+POLLING vs WEBHOOK:
+  - Polling (old): bot continuously asks Telegram "any new messages?"
+    Works on localhost, doesn't need a public URL. Bad for hosting
+    since it needs an always-on background process.
+  - Webhook (current): Telegram pushes messages directly to our
+    server the moment they arrive. Needs a public HTTPS URL (Render
+    provides this automatically). Better for free hosting since the
+    server only wakes up when a message arrives.
+
+Routes incoming messages to:
   - /start              -> welcome message
   - PDF document upload -> extract + store for that user
-  - text message         -> classified by intent.py into:
-                              "live_price" -> resolve which commodity,
-                                              fetch from goldpriceindia.com
-                              "analysis"   -> blended document + web answer
+  - text message        -> classified by intent.py into:
+                            "live_price" -> scrape goldpriceindia.com
+                            "analysis"   -> blended doc + web answer
 """
 import logging
 import os
 
+from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -37,6 +48,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = "data/uploads"
+
+# Render injects a PORT env var — we must bind to it, not a hardcoded port
+PORT = int(os.getenv("PORT", 8000))
+
+# Your Render service URL — set this as an env var on Render dashboard
+# e.g. https://your-bot-name.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+
+# ── FastAPI app (receives Telegram webhook POST requests) ──────────
+fastapi_app = FastAPI()
+
+# ── Telegram bot application ───────────────────────────────────────
+bot_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -78,12 +102,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handles plain text messages.
-    Uses classify_intent() to decide:
-      - "live_price" -> figure out WHICH commodity, then scrape its price
-      - "analysis"   -> blended document + web answer via OpenAI
-    """
     user_id = update.effective_user.id
     user_text = update.message.text
 
@@ -94,8 +112,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if unsupported:
             await update.message.reply_text(
                 f"Sorry, I don't currently have live price data for "
-                f"{unsupported}. Supported commodities: gold, silver, "
-                f"platinum, copper, nickel, and crude oil."
+                f"{unsupported}. Supported: gold, silver, platinum, "
+                f"copper, nickel, crude oil."
             )
             return
 
@@ -108,7 +126,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             )
             return
 
-        # Gold gets its own detailed 24K/22K reply.
         if commodity_slug == "gold":
             await update.message.reply_text("Checking today's gold price...")
             try:
@@ -120,32 +137,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 )
                 if not prices["changed"]:
                     reply += (
-                        "\n\n(No change from the previous close — markets "
-                        "are likely closed today, e.g. a weekend.)"
+                        "\n\n(No change from previous close — markets "
+                        "likely closed today.)"
                     )
             except RuntimeError as e:
                 reply = f"Sorry, couldn't fetch the price right now.\n({e})"
             await update.message.reply_text(reply)
             return
 
-        # Every other supported commodity uses its fetcher from price.py.
         fetch_fn = COMMODITY_FETCHERS.get(commodity_slug)
-        await update.message.reply_text(f"Checking today's {commodity_slug.replace('_', ' ')} price...")
+        await update.message.reply_text(
+            f"Checking today's {commodity_slug.replace('_', ' ')} price..."
+        )
         try:
             data = fetch_fn()
             if "price_per_gram" in data:
-                reply = f"{commodity_slug.title()} price (India):\nPer gram: ₹{data['price_per_gram']:,.2f}"
+                reply = (
+                    f"{commodity_slug.title()} price (India):\n"
+                    f"Per gram: ₹{data['price_per_gram']:,.2f}"
+                )
                 if data.get("price_per_kg"):
                     reply += f"\nPer kg: ₹{data['price_per_kg']:,.2f}"
             else:
-                reply = f"{commodity_slug.replace('_', ' ').title()} price (India): ₹{data['price']:,.2f} {data['unit']}"
+                reply = (
+                    f"{commodity_slug.replace('_', ' ').title()} price (India): "
+                    f"₹{data['price']:,.2f} {data['unit']}"
+                )
         except RuntimeError as e:
             reply = f"Sorry, couldn't fetch that price right now.\n({e})"
         await update.message.reply_text(reply)
         return
 
-    # "analysis" -> document + web blending
-    await update.message.reply_text("Thinking through that with your documents and the web...")
+    await update.message.reply_text(
+        "Thinking through that with your documents and the web..."
+    )
     try:
         answer = answer_with_context(user_text, user_id=user_id)
     except Exception as e:
@@ -153,16 +178,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(answer)
 
 
-def main() -> None:
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-    logger.info("Bot is starting (polling mode)...")
-    app.run_polling()
+# ── Register handlers ──────────────────────────────────────────────
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 
+# ── FastAPI routes ─────────────────────────────────────────────────
+@fastapi_app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """Telegram calls this endpoint every time a message is sent."""
+    data = await request.json()
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.initialize()
+    await bot_app.process_update(update)
+    return {"ok": True}
+
+
+@fastapi_app.get("/")
+async def health_check():
+    """
+    Render uses this to confirm the service is alive.
+    Must return HTTP 200 or Render marks the deploy as failed.
+    """
+    return {"status": "running"}
+
+
+# ── Startup: register webhook with Telegram on boot ───────────────
+@fastapi_app.on_event("startup")
+async def on_startup():
+    await bot_app.initialize()
+    if WEBHOOK_URL:
+        await bot_app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+        logger.info(f"Webhook set to {WEBHOOK_URL}/webhook")
+    else:
+        logger.warning("WEBHOOK_URL not set — webhook not registered with Telegram")
+
+
+# ── Entry point ────────────────────────────────────────────────────
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=PORT)
