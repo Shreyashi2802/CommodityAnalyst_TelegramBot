@@ -10,3 +10,4 @@ pinecone==5.0.1
 fastapi==0.115.0
 uvicorn==0.30.6
 # chromadb==0.5.5  # local vector DB — uncomment if switching back from Pinecone
+supabase==2.7.4

@@ -211,6 +211,20 @@ async def health_check():
     return {"status": "running"}
 
 
+@fastapi_app.get("/log-prices")
+async def log_prices():
+    """
+    Called daily by cron-job.org to trigger the price logger on Render.
+    Fetches today's prices for all commodities and saves to Supabase.
+    """
+    from daily_price_logger import log_all_commodities
+    try:
+        log_all_commodities()
+        return {"status": "ok", "message": "Prices logged to Supabase"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ── Startup: register webhook with Telegram on boot ───────────────
 @fastapi_app.on_event("startup")
 async def on_startup():
