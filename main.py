@@ -107,15 +107,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     user_text = update.message.text.strip()
 
+    # Handle greetings separately
     GREETINGS = {
-    "hi",
-    "hello",
-    "hey",
-    "good morning",
-    "good afternoon",
-    "good evening",
-    "hola",
-    }   
+        "hi",
+        "hello",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "hola",
+    }
 
     if user_text.lower() in GREETINGS:
         await update.message.reply_text(
@@ -133,14 +134,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     intent = classify_intent(user_text)
 
     logger.info(
-    f"""
-        =========================
-        User ID : {user_id}
-        Chat ID : {update.effective_chat.id}
-        Message : {user_text}
-        Intent  : {intent}
-        =========================
-    """
+        f"""
+=========================
+User ID : {user_id}
+Chat ID : {update.effective_chat.id}
+Message : {user_text}
+Intent  : {intent}
+=========================
+"""
     )
 
     if intent == "historical_price":
@@ -148,6 +149,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         reply = lookup_historical_price(user_text)
         await update.message.reply_text(reply)
         return
+
 
     if intent == "live_price":
         unsupported = mentions_unsupported_commodity(user_text)
