@@ -64,8 +64,17 @@ def get_commodity_news(query: str, max_results: int = 3) -> list[str]:
     # return the most recent headlines (better than nothing for
     # "what's happening in commodities" type questions)
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = [title for _, title in scored[:max_results]]
-    return top
+    matched = [
+    title
+    for score, title in scored
+    if score > 0
+    ]
+
+if matched:
+    return matched[:max_results]
+
+# If nothing matched, don't return unrelated headlines.
+return []
 
 
 def simple_web_search(query: str, max_results: int = 3) -> list[str]:
@@ -102,9 +111,15 @@ def answer_with_context(question: str, user_id: int) -> str:
     commodity news first, DuckDuckGo as fallback — then asks
     OpenAI to write one blended answer citing both where useful.
     """
-    doc_chunks = search_user_documents(question, user_id=user_id, top_k=3)
+    print("\n========== QA DEBUG ==========")
+    print("User ID :", user_id)
+    print("Question :", question)
 
+    doc_chunks = search_user_documents(question, user_id=user_id, top_k=3)
+    print("Document Chunks Found :", len(doc_chunks))
     web_snippets = get_commodity_news(question)
+    print("Web Snippets :", web_snippets)
+    print("==============================\n")
     web_source_label = "From recent commodity news headlines:"
     if not web_snippets:
         web_snippets = simple_web_search(question)

@@ -105,9 +105,43 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    user_text = update.message.text
+    user_text = update.message.text.strip()
+
+    GREETINGS = {
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "hola",
+    }   
+
+    if user_text.lower() in GREETINGS:
+    await update.message.reply_text(
+        "Hi! 👋\n\n"
+        "I'm your Commodity Analysis Bot.\n\n"
+        "You can ask me things like:\n"
+        "• Gold price today\n"
+        "• Silver price yesterday\n"
+        "• Latest commodity news\n"
+        "• Why is copper getting expensive?\n"
+        "• Upload a PDF and ask questions about it."
+    )
+    return
 
     intent = classify_intent(user_text)
+
+    logger.info(
+    f"""
+        =========================
+        User ID : {user_id}
+        Chat ID : {update.effective_chat.id}
+        Message : {user_text}
+        Intent  : {intent}
+        =========================
+    """
+    )
 
     if intent == "historical_price":
         await update.message.reply_text("Looking up that price from my records...")
