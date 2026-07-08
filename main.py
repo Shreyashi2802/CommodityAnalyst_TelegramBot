@@ -118,17 +118,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     }   
 
     if user_text.lower() in GREETINGS:
-    await update.message.reply_text(
-        "Hi! 👋\n\n"
-        "I'm your Commodity Analysis Bot.\n\n"
-        "You can ask me things like:\n"
-        "• Gold price today\n"
-        "• Silver price yesterday\n"
-        "• Latest commodity news\n"
-        "• Why is copper getting expensive?\n"
-        "• Upload a PDF and ask questions about it."
-    )
-    return
+        await update.message.reply_text(
+            "Hi! 👋\n\n"
+            "I'm your Commodity Analysis Bot.\n\n"
+            "You can ask me things like:\n"
+            "• Gold price today\n"
+            "• Silver price yesterday\n"
+            "• Latest commodity news\n"
+            "• Why is copper getting expensive?\n"
+            "• Upload a PDF and ask questions about it."
+        )
+        return
 
     intent = classify_intent(user_text)
 
