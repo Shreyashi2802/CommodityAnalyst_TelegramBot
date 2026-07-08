@@ -48,34 +48,29 @@ def get_commodity_news(query: str, max_results: int = 3) -> list[str]:
     if not feed.entries:
         return []
 
-    # crude relevance filter: how many of the question's words
-    # appear in each headline. Good enough for a small RSS feed
-    # (we're filtering ~10-20 headlines, not doing real search).
     query_words = set(query.lower().split())
 
     scored = []
+
     for entry in feed.entries:
         title = entry.get("title", "")
         title_words = set(title.lower().split())
         overlap = len(query_words & title_words)
         scored.append((overlap, title))
 
-    # sort by relevance, but if nothing overlaps at all, still
-    # return the most recent headlines (better than nothing for
-    # "what's happening in commodities" type questions)
     scored.sort(key=lambda x: x[0], reverse=True)
+
     matched = [
-    title
-    for score, title in scored
-    if score > 0
+        title
+        for score, title in scored
+        if score > 0
     ]
 
-if matched:
-    return matched[:max_results]
+    if matched:
+        return matched[:max_results]
 
-# If nothing matched, don't return unrelated headlines.
-return []
-
+    # Nothing matched the user's query
+    return []
 
 def simple_web_search(query: str, max_results: int = 3) -> list[str]:
     """
