@@ -91,13 +91,12 @@ def parse_karat_table(soup: BeautifulSoup) -> dict:
     price_24k = _clean_price(target_row[1].get_text())
     price_22k = _clean_price(target_row[2].get_text())
 
-    page_text = soup.get_text()
-    changed = not ("+0 (0%)" in page_text or "+0(0%)" in page_text)
+    #page_text = soup.get_text()
+    #changed = not ("+0 (0%)" in page_text or "+0(0%)" in page_text)
 
     return {
         "24k_per_gram": price_24k,
         "22k_per_gram": price_22k,
-        "changed": changed,
     }
 
 

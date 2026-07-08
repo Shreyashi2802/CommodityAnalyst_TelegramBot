@@ -19,6 +19,7 @@ Routes incoming messages to:
 """
 import logging
 import os
+from datetime import datetime
 
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -135,20 +136,30 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         if commodity_slug == "gold":
             await update.message.reply_text("Checking today's gold price...")
+
             try:
                 prices = get_gold_price_per_gram()
+
                 reply = (
-                    "Today's Gold Price (India, per gram):\n"
-                    f"24K: ₹{prices['24k_per_gram']:,.2f}\n"
-                    f"22K: ₹{prices['22k_per_gram']:,.2f}"
+                     "📈 Today's Gold Price (India, per gram)\n\n"
+                    f"🥇 24K: ₹{prices['24k_per_gram']:,.2f}\n"
+                    f"🥈 22K: ₹{prices['22k_per_gram']:,.2f}"
                 )
-                if not prices["changed"]:
+
+        # If today is Saturday (5) or Sunday (6), mention that these
+        # are the latest available prices.
+                if datetime.now().weekday() >= 5:
                     reply += (
-                        "\n\n(No change from previous close — markets "
-                        "likely closed today.)"
+                        "\n\nℹ️ Markets are generally closed on weekends. "
+                        "These are the latest available gold prices."
                     )
+
             except RuntimeError as e:
-                reply = f"Sorry, couldn't fetch the price right now.\n({e})"
+                reply = (
+                    "Sorry, I couldn't fetch the gold price right now.\n"
+                    f"({e})"
+                )
+
             await update.message.reply_text(reply)
             return
 
