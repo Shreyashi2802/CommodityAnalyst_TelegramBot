@@ -60,17 +60,15 @@ def get_commodity_news(query: str, max_results: int = 3) -> list[str]:
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    matched = [
-        title
-        for score, title in scored
-        if score > 0
-    ]
+    matched = [title for score, title in scored if score > 0]
 
     if matched:
         return matched[:max_results]
 
     # Nothing matched the user's query
-    return []
+    # Nothing matched — return most recent headlines anyway
+    # so the user still gets current commodity context
+    return [title for _, title in scored[:max_results]]
 
 def simple_web_search(query: str, max_results: int = 3) -> list[str]:
     """
