@@ -111,16 +111,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             f"Generating {display} trend chart for the last {days} days..."
         )
 
-        image_bytes, error = generate_trend_chart(commodity_slug, days)
+        try:
+            image_bytes, error = generate_trend_chart(commodity_slug, days)
 
-        if error:
-            await update.message.reply_text(error)
-            return
+            if error:
+                await update.message.reply_text(error)
+                return
 
-        await update.message.reply_photo(
-            photo=io.BytesIO(image_bytes),
-            caption=f"{display} price trend — last {days} days (INR)"
-        )
+            await update.message.reply_photo(
+                photo=io.BytesIO(image_bytes),
+                caption=f"{display} price trend — last {days} days (INR)"
+            )
+        except Exception as e:
+            logger.error(f"Chart generation failed: {e}", exc_info=True)
+            await update.message.reply_text(
+                f"Sorry, chart generation failed: {e}"
+            )
         return
 
     # ── HISTORICAL PRICE ───────────────────────────────────────────
