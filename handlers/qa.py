@@ -1,24 +1,14 @@
 """
-The "blending" step: takes a user's question, gathers context from
-  (a) their uploaded documents (via search_user_documents)
-  (b) the web (via an RSS commodity news feed, with DuckDuckGo as fallback)
-and asks OpenAI to write one synthesized answer using both.
+QA module
 
-NOTE ON WEB SEARCH:
-  OpenAI's chat models don't browse the web by themselves unless
-  you use a specific "web search" enabled model/tool. Two sources
-  are used here for "the web" half of the context:
+Blends:
+1. User uploaded documents (Pinecone)
+2. Live commodity news (Investing.com RSS)
+3. DuckDuckGo fallback
 
-  1. RSS_FEED_URL (investing.com's commodity news feed) — a real,
-     legitimate, key-free RSS feed of live commodity market news.
-     This is the PRIMARY source: structured XML, meant for
-     programmatic consumption, much more reliable than scraping
-     a search engine's HTML.
-
-  2. DuckDuckGo HTML scrape — kept as a FALLBACK for questions the
-     RSS feed's recent headlines don't cover (e.g. "what is XYZ"
-     type background questions, rather than "what's happening now").
+Uses GPT-4o-mini to generate one final response.
 """
+
 from openai import OpenAI
 import requests
 import feedparser
@@ -31,15 +21,23 @@ client_openai = OpenAI(api_key=OPENAI_API_KEY)
 RSS_FEED_URL = "https://www.investing.com/rss/news_11.rss"
 
 
-def get_commodity_news(query: str, max_results: int = 3) -> list[str]:
+# ----------------------------
+# RSS NEWS
+# ----------------------------
+def get_commodity_news(question: str, max_results: int = 5) -> list[str]:
     """
-    Pulls the latest commodity news headlines from investing.com's
-    RSS feed, and does a simple keyword-overlap filter to surface
-    the ones most relevant to the user's question.
+    Returns relevant commodity news headlines.
 
-    Returns a list of headline strings (most relevant first).
-    Returns [] if the feed can't be reached or nothing matches.
+    If the question is generic like:
+    - latest commodity news
+    - latest news
+    - market news
+
+    then simply return the latest headlines.
+
+    Otherwise rank by keyword overlap.
     """
+
     try:
         feed = feedparser.parse(RSS_FEED_URL)
     except Exception:
@@ -48,107 +46,223 @@ def get_commodity_news(query: str, max_results: int = 3) -> list[str]:
     if not feed.entries:
         return []
 
-    query_words = set(query.lower().split())
+    q = question.lower()
+
+    generic_news_words = [
+        "latest",
+        "recent",
+        "news",
+        "market",
+        "commodity",
+        "headlines",
+        "update",
+    ]
+
+    # Generic news request -> latest headlines
+    if any(word in q for word in generic_news_words):
+        headlines = []
+
+        for entry in feed.entries[:max_results]:
+            headlines.append(entry.get("title", ""))
+
+        return headlines
+
+    query_words = set(q.split())
 
     scored = []
 
     for entry in feed.entries:
         title = entry.get("title", "")
         title_words = set(title.lower().split())
+
         overlap = len(query_words & title_words)
+
         scored.append((overlap, title))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(reverse=True)
 
     matched = [title for score, title in scored if score > 0]
 
     if matched:
         return matched[:max_results]
 
-    # Nothing matched the user's query
-    # Nothing matched — return most recent headlines anyway
-    # so the user still gets current commodity context
-    return [title for _, title in scored[:max_results]]
+    return [entry.get("title", "") for entry in feed.entries[:max_results]]
 
+
+# ----------------------------
+# DUCKDUCKGO FALLBACK
+# ----------------------------
 def simple_web_search(query: str, max_results: int = 3) -> list[str]:
-    """
-    Fallback, key-free web search using DuckDuckGo's HTML endpoint.
-    Only used when the RSS feed doesn't return anything useful.
-    """
+
     try:
-        resp = requests.get(
+        response = requests.get(
             "https://duckduckgo.com/html/",
             params={"q": query},
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=10,
         )
-        resp.raise_for_status()
+
+        response.raise_for_status()
+
     except requests.RequestException:
-        return []  # fail quietly — the bot will just rely on documents only
+        return []
 
     from bs4 import BeautifulSoup
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(response.text, "html.parser")
+
     snippets = []
+
     for result in soup.select(".result__snippet")[:max_results]:
         text = result.get_text(strip=True)
+
         if text:
             snippets.append(text)
+
     return snippets
 
 
+# ----------------------------
+# MAIN QA
+# ----------------------------
 def answer_with_context(question: str, user_id: int) -> str:
-    """
-    Main entry point: given a user's question, pulls relevant
-    document chunks (scoped to this user) and web context — RSS
-    commodity news first, DuckDuckGo as fallback — then asks
-    OpenAI to write one blended answer citing both where useful.
-    """
+
     print("\n========== QA DEBUG ==========")
-    print("User ID :", user_id)
+    print("User :", user_id)
     print("Question :", question)
 
-    doc_chunks = search_user_documents(question, user_id=user_id, top_k=3)
-    print("Document Chunks Found :", len(doc_chunks))
-    web_snippets = get_commodity_news(question)
-    print("Web Snippets :", web_snippets)
-    print("==============================\n")
-    web_source_label = "From recent commodity news headlines:"
-    if not web_snippets:
-        web_snippets = simple_web_search(question)
-        web_source_label = "From recent web search results:"
-
-    context_parts = []
-    if doc_chunks:
-        context_parts.append(
-            "From the user's uploaded document(s):\n"
-            + "\n---\n".join(doc_chunks)
-        )
-    if web_snippets:
-        context_parts.append(
-            f"{web_source_label}\n" + "\n---\n".join(web_snippets)
-        )
-
-    if not context_parts:
-        context_block = "(No document or web context was found.)"
-    else:
-        context_block = "\n\n".join(context_parts)
-
-    system_prompt = (
-        "You are a commodity market analysis assistant. "
-        "Answer the user's question using the provided context. "
-        "If the document and web context disagree, point that out. "
-        "If context is missing or insufficient, say so clearly rather "
-        "than guessing. Keep the answer concise and practical."
+    # Search user documents
+    doc_chunks = search_user_documents(
+        question,
+        user_id=user_id,
+        top_k=3,
     )
 
-    user_prompt = f"Question: {question}\n\nContext:\n{context_block}"
+    print("Documents :", len(doc_chunks))
+
+    # RSS news
+    web_snippets = get_commodity_news(question)
+
+    web_source = "Latest Commodity News"
+
+    # Fallback
+    if not web_snippets:
+        web_snippets = simple_web_search(question)
+        web_source = "Web Search Results"
+
+    print("Web Snippets:")
+    for item in web_snippets:
+        print("-", item)
+
+    print("==============================\n")
+
+    document_context = (
+        "\n\n".join(doc_chunks)
+        if doc_chunks
+        else "No relevant user documents."
+    )
+
+    news_context = (
+        "\n".join(f"• {item}" for item in web_snippets)
+        if web_snippets
+        else "No recent web news."
+    )
+
+    system_prompt = """
+You are an expert Commodity Market Analysis Assistant.
+
+You are provided with:
+
+1. User uploaded documents.
+2. Latest commodity news headlines.
+
+Rules:
+
+- Always use the provided news headlines when answering questions about:
+    • latest commodity news
+    • market updates
+    • today's news
+    • current events
+    • recent developments
+    • price movements
+
+- Headlines about:
+    • wars
+    • geopolitical tensions
+    • sanctions
+    • trade
+    • tariffs
+    • inflation
+    • central banks
+    • interest rates
+    • recession
+    • currency movements
+
+  are ALL relevant because they influence commodity markets.
+
+- Summarize the headlines naturally.
+
+- Do NOT say:
+  "The context does not contain commodity news"
+  if headlines have been provided.
+
+- If both documents and news are relevant,
+  combine both.
+
+- Only state that context is insufficient when BOTH
+  document context AND web context are empty.
+
+- Never invent facts.
+
+- Keep answers concise but informative.
+"""
+
+    user_prompt = f"""
+User Question:
+{question}
+
+==========================
+USER DOCUMENTS
+==========================
+
+{document_context}
+
+==========================
+{web_source}
+==========================
+
+{news_context}
+
+Instructions:
+
+If the question asks for:
+
+- latest news
+- recent developments
+- today's market
+- market updates
+
+Prioritize the news section.
+
+If it asks about uploaded documents,
+prioritize the documents.
+
+If both are useful,
+combine both naturally.
+"""
 
     response = client_openai.chat.completions.create(
         model="gpt-4o-mini",
+        temperature=0.3,
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_prompt,
+            },
         ],
     )
 
