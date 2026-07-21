@@ -1,9 +1,8 @@
 """
-Classifies what kind of question the user is asking, so main.py can
-route to the right handler. Three categories:
-
+Classifies user messages into four categories:
   live_price       -> scrape goldpriceindia.com for today's price
-  historical_price -> look up a past date from our local CSV logs
+  historical_price -> look up a past date from Supabase
+  chart            -> generate a trend chart from Supabase history
   analysis         -> RAG pipeline (doc search + news + OpenAI)
 """
 from openai import OpenAI
@@ -12,46 +11,40 @@ from config import OPENAI_API_KEY
 client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 CLASSIFIER_SYSTEM_PROMPT = """\
-You classify a user's message into exactly one of three categories:
+You classify a user's message into exactly one of four categories:
 
-- "live_price": the user wants TODAY's current/live price of any
-  commodity — right now, in real time. Only for the present moment.
+- "live_price": user wants TODAY's current live price of any commodity.
 
-- "historical_price": the user wants the price of a commodity on a
-  SPECIFIC PAST DATE or relative past period — yesterday, last week,
-  last Monday, 3 days ago, a specific date like "June 28", etc.
-  The key signal is: they want ONE specific past price point, not
-  a trend/analysis/outlook.
+- "historical_price": user wants the price on a SPECIFIC PAST DATE —
+  yesterday, last Monday, July 3rd, 3 days ago, etc.
+  Single specific past date only, not a range or trend.
 
-- "analysis": anything else — trends, outlooks, comparisons, "why",
-  "how has it changed", document questions, multi-period analysis.
-  Also use this for vague past references that aren't a specific
-  single date (e.g. "how was gold last year" = analysis, not historical).
+- "chart": user wants a TREND CHART or GRAPH showing price movement
+  over a period — last 7 days, last week, past month, show trend, etc.
+  Key signals: "chart", "graph", "trend", "show", "plot", "visualize",
+  "last N days", "past N days", "over the last".
+
+- "analysis": anything else — outlook, why, how, comparisons, document
+  questions, multi-period analysis without asking for a chart.
 
 Examples:
-"gold price today"               -> live_price
-"current silver rate"            -> live_price
-"crude oil price right now"      -> live_price
-"gold price yesterday"           -> historical_price
-"what was silver price last week"-> historical_price
-"copper price on June 28"        -> historical_price
-"nickel price 3 days ago"        -> historical_price
-"gold price last Monday"         -> historical_price
-"how has gold changed this year" -> analysis
-"what's the outlook for silver"  -> analysis
-"why is copper expensive"        -> analysis
-"what was gold price in 2024"    -> analysis  (full year, not a specific date)
+"gold price today"                    -> live_price
+"current silver rate"                 -> live_price
+"gold price yesterday"                -> historical_price
+"silver price last Monday"            -> historical_price
+"show gold trend last 7 days"         -> chart
+"gold chart for past week"            -> chart
+"plot copper prices last 14 days"     -> chart
+"silver trend"                        -> chart
+"what's the outlook for gold"         -> analysis
+"why is copper expensive"             -> analysis
+"what was gold price in 2024"         -> analysis
 
-Respond with ONLY one word: live_price, historical_price, or analysis.
-No punctuation, no explanation.
+Respond with ONLY one word: live_price, historical_price, chart, or analysis.
 """
 
 
 def classify_intent(user_text: str) -> str:
-    """
-    Returns "live_price", "historical_price", or "analysis".
-    Defaults to "analysis" on any error.
-    """
     try:
         response = client_openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -67,22 +60,23 @@ def classify_intent(user_text: str) -> str:
             return "live_price"
         if "historical_price" in label:
             return "historical_price"
+        if "chart" in label:
+            return "chart"
         return "analysis"
     except Exception:
         return "analysis"
 
 
 if __name__ == "__main__":
-    test_messages = [
+    tests = [
         "gold price today",
-        "what's the current gold price",
-        "gold price yesterday",
-        "what was silver price last week",
-        "copper price on June 28",
-        "nickel price 3 days ago",
-        "what was gold price in 2024",
-        "how has gold changed this year",
-        "what's the outlook for silver",
+        "silver price yesterday",
+        "show gold trend last 7 days",
+        "copper chart past 14 days",
+        "silver trend",
+        "what's the outlook for gold",
+        "crude oil price right now",
+        "gold price last Monday",
     ]
-    for msg in test_messages:
-        print(f"{msg!r:55} -> {classify_intent(msg)}")
+    for msg in tests:
+        print(f"{msg!r:50} -> {classify_intent(msg)}")
