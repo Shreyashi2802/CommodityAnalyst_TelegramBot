@@ -252,6 +252,50 @@ def debug_dump_table_rows(commodity_slug: str) -> None:
         if cell_texts:
             print(f"row {i}: {cell_texts}")
 
+def get_live_price(commodity_slug: str) -> dict:
+    """
+    Returns a normalized live price for any supported commodity.
+
+    Output format:
+    {
+        "price": float,
+        "unit": str
+    }
+    """
+
+    if commodity_slug == "gold":
+        data = get_gold_price_per_gram()
+        return {
+            "price": data["24k_per_gram"],
+            "unit": "24K per gram"
+        }
+
+    elif commodity_slug == "silver":
+        data = get_silver_price()
+        return {
+            "price": data["price_per_gram"],
+            "unit": "per gram"
+        }
+
+    elif commodity_slug == "platinum":
+        data = get_platinum_price()
+        return {
+            "price": data["price_per_gram"],
+            "unit": "per gram"
+        }
+
+    elif commodity_slug == "copper":
+        return get_copper_price()
+
+    elif commodity_slug == "nickel":
+        return get_nickel_price()
+
+    elif commodity_slug == "crude_oil":
+        return get_crude_oil_price()
+
+    raise RuntimeError("Unsupported commodity")
+
+
 
 if __name__ == "__main__":
     # Quick manual test: run `python -m handlers.price` from project root

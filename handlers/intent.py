@@ -29,7 +29,12 @@ Examples:
 "what's the outlook for gold"         -> analysis
 "why is copper expensive"             -> analysis
 "what was gold price in 2024"         -> analysis
-"show gold trend last 7 days"         -> analysis
+"show gold trend last 7 days"         -> historical_price
+"compare today's gold price with yesterday's" -> historical_price
+"average silver price this week"      -> historical_price
+"highest gold price this week"        -> historical_price
+"gold price history" -> historical_price
+"gold prices this week" -> historical_price
 
 Respond with ONLY one word: live_price, historical_price, or analysis.
 """
