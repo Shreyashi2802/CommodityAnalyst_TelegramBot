@@ -109,30 +109,64 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Handle greetings separately
     GREETINGS = {
-        "hi",
-        "hello",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening",
-        "hola",
+    "hi",
+    "hello",
+    "hey",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "hola",
     }
 
-    if user_text.lower() in GREETINGS:
+    THANKS = {
+     "thanks",
+     "thank you",
+     "thanks!",
+     "thank you!",
+     "thx",
+     "ty",
+    }
+
+    FAREWELLS = {
+     "bye",
+     "goodbye",
+     "see you",
+     "see ya",
+    }
+    user_input = user_text.strip().lower()
+
+    if user_input in GREETINGS:
         await update.message.reply_text(
             "Hi! 👋\n\n"
             "I'm your Commodity Analysis Bot.\n\n"
-            "You can ask me things like:\n"
+            "I can help you with:\n"
+            "•  Live commodity prices\n"
+            "•  Historical prices\n"
+            "•  Latest commodity news\n"
+            "•  Market analysis\n"
+            "•  PDF document analysis\n\n"
+            "Try asking:\n"
             "• Gold price today\n"
             "• Silver price yesterday\n"
             "• Latest commodity news\n"
-            "• Why is copper getting expensive?\n"
-            "• Upload a PDF and ask questions about it."
+            "• Why is copper getting expensive?"
+        )
+        return
+
+    if user_input in THANKS:
+        await update.message.reply_text(
+            "You're welcome! 😊\n\n"
+            "Let me know if you need any commodity prices, market news, or analysis."
+        )
+        return
+
+    if user_input in FAREWELLS:
+        await update.message.reply_text(
+            "Goodbye! 👋\nHave a great day and happy investing!"
         )
         return
 
     intent = classify_intent(user_text)
-
     logger.info(
         f"""
 =========================
