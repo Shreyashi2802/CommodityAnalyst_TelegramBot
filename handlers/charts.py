@@ -1,19 +1,14 @@
-import sys
-sys.setrecursionlimit(5000)  # makes it fail faster with clearer error
 """
-Generates commodity price trend charts from Supabase historical data
-and returns them as PNG image bytes for sending via Telegram.
+Generates commodity price trend charts from Supabase historical data.
+Completely self-contained — no imports from other handlers to avoid
+any circular import chains.
 """
 import io
 import re
+import sys
+sys.setrecursionlimit(5000)
+
 from datetime import date, timedelta, datetime
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-
-from handlers.price import resolve_commodity
 
 COMMODITY_DISPLAY = {
     "gold": ("Gold (24K)", "#FFD700"),
@@ -24,15 +19,36 @@ COMMODITY_DISPLAY = {
     "crude_oil": ("Crude Oil", "#888888"),
 }
 
+COMMODITY_ALIASES = {
+    "gold": "gold",
+    "silver": "silver",
+    "platinum": "platinum",
+    "copper": "copper",
+    "nickel": "nickel",
+    "crude oil": "crude_oil",
+    "crude": "crude_oil",
+    "oil": "crude_oil",
+    "wti": "crude_oil",
+    "brent": "crude_oil",
+    "natural gas": "crude_oil",
+}
+
+
+def _resolve_commodity(user_text: str) -> str | None:
+    """Self-contained commodity resolver — no import from handlers.price."""
+    lowered = user_text.lower()
+    for alias in sorted(COMMODITY_ALIASES, key=len, reverse=True):
+        if alias in lowered:
+            return COMMODITY_ALIASES[alias]
+    return None
+
 
 def fetch_price_history(commodity_slug: str, days: int) -> list[dict]:
-    """Query Supabase inside the function to avoid circular import/init issues."""
+    """Lazy import of supabase to avoid circular imports at module level."""
     from supabase import create_client
     from config import SUPABASE_URL, SUPABASE_KEY
-
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     from_date = (date.today() - timedelta(days=days)).isoformat()
-
     result = (
         supabase.table("price_history")
         .select("date, price")
@@ -45,18 +61,23 @@ def fetch_price_history(commodity_slug: str, days: int) -> list[dict]:
 
 
 def generate_trend_chart(commodity_slug: str, days: int) -> tuple:
+    """Lazy import of matplotlib to avoid recursion during module load."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+
     rows = fetch_price_history(commodity_slug, days)
 
     if not rows:
         return None, (
             f"No price history found for "
-            f"{commodity_slug.replace('_', ' ')} in the last {days} days. "
-            f"Make sure the daily logger has been running."
+            f"{commodity_slug.replace('_', ' ')} in the last {days} days."
         )
 
     if len(rows) < 2:
         return None, (
-            f"Only {len(rows)} data point found — need at least 2 to draw a trend."
+            f"Only {len(rows)} data point — need at least 2 to draw a trend."
         )
 
     dates = [datetime.strptime(r["date"], "%Y-%m-%d") for r in rows]
@@ -117,7 +138,7 @@ def generate_trend_chart(commodity_slug: str, days: int) -> tuple:
 
 
 def parse_chart_request(user_text: str) -> tuple:
-    commodity_slug = resolve_commodity(user_text)
+    commodity_slug = _resolve_commodity(user_text)
     match = re.search(r"(\d+)\s*days?", user_text.lower())
     days = int(match.group(1)) if match else 7
     days = min(days, 90)
