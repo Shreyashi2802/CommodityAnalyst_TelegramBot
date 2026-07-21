@@ -1,3 +1,5 @@
+import sys
+sys.setrecursionlimit(5000)  # makes it fail faster with clearer error
 """
 Generates commodity price trend charts from Supabase historical data
 and returns them as PNG image bytes for sending via Telegram.
