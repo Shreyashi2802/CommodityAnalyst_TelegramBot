@@ -23,6 +23,7 @@ from datetime import date
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY
 from handlers.price import get_gold_price_per_gram, COMMODITY_FETCHERS
+import time
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -44,6 +45,7 @@ def log_all_commodities() -> None:
     try:
         data = get_gold_price_per_gram()
         log_price("gold", data["24k_per_gram"], "INR per gram (24K)")
+        time.sleep(2)
         results.append(("gold", "OK", data["24k_per_gram"]))
     except Exception as e:
         results.append(("gold", f"FAILED: {e}", None))
@@ -55,6 +57,7 @@ def log_all_commodities() -> None:
             price = data.get("price_per_gram") or data.get("price")
             unit = "INR per gram" if "price_per_gram" in data else f"INR {data['unit']}"
             log_price(slug, price, unit)
+            time.sleep(2)
             results.append((slug, "OK", price))
         except Exception as e:
             results.append((slug, f"FAILED: {e}", None))
