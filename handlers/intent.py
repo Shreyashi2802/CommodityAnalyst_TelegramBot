@@ -35,6 +35,8 @@ Examples:
 "highest gold price this week"        -> historical_price
 "gold price history" -> historical_price
 "gold prices this week" -> historical_price
+"compare silver with yesterday"       -> historical_price
+"silver price change"                 -> historical_price
 
 Respond with ONLY one word: live_price, historical_price, or analysis.
 """

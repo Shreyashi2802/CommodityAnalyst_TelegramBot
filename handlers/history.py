@@ -11,7 +11,7 @@ from supabase import create_client
 from openai import OpenAI
 
 from config import OPENAI_API_KEY, SUPABASE_URL, SUPABASE_KEY
-from handlers.price import resolve_commodity, get_live_price
+from handlers.price import resolve_commodity
 
 client_openai = OpenAI(api_key=OPENAI_API_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -105,34 +105,48 @@ def detect_history_query(user_text: str) -> str:
 
 def compare_today_vs_yesterday(commodity_slug: str) -> str:
     """
-    Compare today's live price with yesterday's logged price.
+    Compare today's logged price with yesterday's logged price.
+    Uses only Supabase (no live scraping).
     """
 
+    today_date = date.today().isoformat()
     yesterday_date = (date.today() - timedelta(days=1)).isoformat()
 
     try:
         result = (
             supabase.table("price_history")
-            .select("price, unit")
+            .select("date, price, unit")
             .eq("commodity", commodity_slug)
-            .eq("date", yesterday_date)
+            .in_("date", [today_date, yesterday_date])
             .execute()
         )
     except Exception as e:
         return f"Couldn't access the historical database.\n({e})"
 
     if not result.data:
-        return f"I don't have yesterday's price for {commodity_slug.replace('_', ' ')}."
+        return (
+            f"No historical data available for "
+            f"{commodity_slug.replace('_', ' ')}."
+        )
 
-    yesterday = result.data[0]
+    prices = {
+        row["date"]: row
+        for row in result.data
+    }
 
-    try:
-        live = get_live_price(commodity_slug)
-    except Exception as e:
-        return f"Couldn't fetch today's live price.\n({e})"
+    if today_date not in prices:
+        return (
+            "Today's price hasn't been logged yet.\n"
+            "Please try again after the daily logger runs."
+        )
 
-    today_price = float(live["price"])
-    yesterday_price = float(yesterday["price"])
+    if yesterday_date not in prices:
+        return (
+            "I don't have yesterday's price yet."
+        )
+
+    today_price = float(prices[today_date]["price"])
+    yesterday_price = float(prices[yesterday_date]["price"])
 
     difference = today_price - yesterday_price
     percent = (difference / yesterday_price) * 100
@@ -154,7 +168,6 @@ def compare_today_vs_yesterday(commodity_slug: str) -> str:
         f"Difference : ₹{abs(difference):,.2f}\n"
         f"Percentage Change : {percent:+.2f}%"
     )
-
 
 def get_weekly_trend(commodity_slug: str) -> str:
     """
