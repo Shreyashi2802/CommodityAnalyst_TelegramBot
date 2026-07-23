@@ -221,6 +221,39 @@ def get_weekly_trend(commodity_slug: str) -> str:
 
     return "\n".join(output)
 
+def lookup_today_price(commodity_slug: str) -> str:
+    """
+    Returns today's logged price for a commodity from Supabase.
+    Used as a temporary replacement for live scraping.
+    """
+
+    today_date = date.today().isoformat()
+
+    try:
+        result = (
+            supabase.table("price_history")
+            .select("price, unit")
+            .eq("commodity", commodity_slug)
+            .eq("date", today_date)
+            .execute()
+        )
+    except Exception as e:
+        return f"Couldn't access the price database.\n({e})"
+
+    if not result.data:
+        return (
+            f"Today's price for {commodity_slug.replace('_', ' ')} "
+            "hasn't been logged yet. Please try again later."
+        )
+
+    row = result.data[0]
+
+    commodity_label = commodity_slug.replace("_", " ").title()
+
+    return (
+        f"📈 Today's {commodity_label} Price\n\n"
+        f"₹{float(row['price']):,.2f} ({row['unit']})"
+    )
 
 def lookup_historical_price(user_text: str) -> str:
     """

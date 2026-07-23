@@ -19,6 +19,7 @@ Routes incoming messages to:
 """
 import logging
 import os
+from handlers.history import lookup_today_price
 from datetime import datetime
 
 from fastapi import FastAPI, Request
@@ -208,13 +209,14 @@ Intent  : {intent}
             await update.message.reply_text("Checking today's gold price...")
 
             try:
-                prices = get_gold_price_per_gram()
+                #prices = get_gold_price_per_gram()
+                reply = lookup_today_price("gold")
 
-                reply = (
-                     "📈 Today's Gold Price (India, per gram)\n\n"
-                    f"🥇 24K: ₹{prices['24k_per_gram']:,.2f}\n"
-                    f"🥈 22K: ₹{prices['22k_per_gram']:,.2f}"
-                )
+                #reply = (
+                    # "📈 Today's Gold Price (India, per gram)\n\n"
+                    #f"🥇 24K: ₹{prices['24k_per_gram']:,.2f}\n"
+                    #f"🥈 22K: ₹{prices['22k_per_gram']:,.2f}"
+                #)
 
         # If today is Saturday (5) or Sunday (6), mention that these
         # are the latest available prices.
