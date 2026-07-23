@@ -12,7 +12,7 @@ client_openai = OpenAI(api_key=OPENAI_API_KEY)
 CLASSIFIER_SYSTEM_PROMPT = """\
 You classify a user's message into exactly one of three categories:
 
-- "live_price": user wants TODAY's current live price of any commodity.
+#- "live_price": user wants TODAY's current live price of any commodity.
 
 - "historical_price": user wants the price on a SPECIFIC PAST DATE —
   yesterday, last Monday, July 3rd, 3 days ago, etc.
@@ -22,8 +22,8 @@ You classify a user's message into exactly one of three categories:
   questions, trends, charts, multi-period analysis.
 
 Examples:
-"gold price today"                    -> live_price
-"current silver rate"                 -> live_price
+"gold price today"                    -> historical_price
+"current silver rate"                 -> historical_price
 "gold price yesterday"                -> historical_price
 "silver price last Monday"            -> historical_price
 "what's the outlook for gold"         -> analysis

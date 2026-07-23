@@ -253,11 +253,11 @@ def lookup_historical_price(user_text: str) -> str:
             "'silver price last Monday', or 'copper price on June 28'."
         )
 
-    if target_date == date.today().isoformat():
-        return (
-            "That looks like today's date — ask me 'gold price today' "
-            "for the live current price."
-        )
+    #if target_date == date.today().isoformat():
+        #return (
+            #"That looks like today's date — ask me 'gold price today' "
+            #"for the live current price."
+        #)
 
     # Query Supabase
     try:
